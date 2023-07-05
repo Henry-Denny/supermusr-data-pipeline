@@ -53,7 +53,7 @@ struct Cli {
     events_per_frame: usize,
 
     /// Number of measurements to include in each frame
-    #[clap(long = "time-bins", default_value = "500")]
+    #[clap(long = "time-bins", default_value = "20000")]
     measurements_per_frame: usize,
 
     #[command(subcommand)]
