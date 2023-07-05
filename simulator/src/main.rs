@@ -16,7 +16,7 @@ use streaming_types::{
         finish_digitizer_event_list_message_buffer, DigitizerEventListMessage,
         DigitizerEventListMessageArgs,
     },
-    flatbuffers::FlatBufferBuilder,
+    flatbuffers::{FlatBufferBuilder, Vector, WIPOffset},
     frame_metadata_v1_generated::{FrameMetadataV1, FrameMetadataV1Args, GpsTime},
 };
 use tokio::time;
@@ -201,24 +201,34 @@ async fn send(
         };
         let metadata = FrameMetadataV1::create(fbb, &metadata);
 
-        let mut channel0_voltage = Vec::<Intensity>::new();
-        channel0_voltage.resize(cli.measurements_per_frame, 404);
-        channel0_voltage[0] = frame_number as Intensity;
-        channel0_voltage[1] = cli.digitizer_id as Intensity;
-        let channel0_voltage = Some(fbb.create_vector::<Intensity>(&channel0_voltage));
-        let channel0 = ChannelTrace::create(
-            fbb,
-            &ChannelTraceArgs {
-                channel: 0,
-                voltage: channel0_voltage,
-            },
-        );
+        let mut channel_voltage_data: Vec<Vec<Intensity>> = Vec::default();
+        let mut channel_voltage_vectors: Vec<Option<WIPOffset<Vector<Intensity>>>> = Vec::default();
+        let mut channels: Vec<WIPOffset<ChannelTrace>> = Vec::default();
+        for i in 0..8 {
+            let mut data = Vec::<Intensity>::new();
+            data.resize(cli.measurements_per_frame, 404);
+            data[0] = frame_number as Intensity;
+            data[1] = cli.digitizer_id as Intensity;
+            channel_voltage_data.push(data);
+
+            channel_voltage_vectors.push(Some(
+                fbb.create_vector::<Intensity>(&channel_voltage_data[i]),
+            ));
+
+            channels.push(ChannelTrace::create(
+                fbb,
+                &ChannelTraceArgs {
+                    channel: i as u32,
+                    voltage: channel_voltage_vectors[i],
+                },
+            ));
+        }
 
         let message = DigitizerAnalogTraceMessageArgs {
             digitizer_id: cli.digitizer_id,
             metadata: Some(metadata),
             sample_rate: 1_000_000_000,
-            channels: Some(fbb.create_vector(&[channel0])),
+            channels: Some(fbb.create_vector(&channels)),
         };
         let message = DigitizerAnalogTraceMessage::create(fbb, &message);
         finish_digitizer_analog_trace_message_buffer(fbb, message);
