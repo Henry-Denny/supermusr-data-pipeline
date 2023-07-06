@@ -41,7 +41,7 @@ struct Cli {
     digitizer_id: u8,
 
     /// Number of measurements to include in each frame
-    #[clap(long = "time-bins", default_value = "20000")]
+    #[clap(long = "time-bins", default_value = "32000")]
     measurements_per_frame: usize,
 
     /// Number of first frame to be sent
@@ -124,12 +124,14 @@ async fn main() {
         let message = DigitizerAnalogTraceMessage::create(&mut fbb, &message);
         finish_digitizer_analog_trace_message_buffer(&mut fbb, message);
 
+        let finished_data = fbb.finished_data();
+
         let start_time = SystemTime::now();
 
         match producer
             .send(
                 FutureRecord::to(&cli.trace_topic)
-                    .payload(fbb.finished_data())
+                    .payload(finished_data)
                     .key(&"todo".to_string()),
                 Timeout::After(Duration::from_millis(100)),
             )
