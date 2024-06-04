@@ -8,11 +8,12 @@ use rdkafka::{
     consumer::{stream_consumer::StreamConsumer, CommitMode, Consumer},
     message::Message,
 };
+use supermusr_common::{conditional_init_tracer, tracer::OptionalHeaderTracerExt};
 use supermusr_streaming_types::dat2_digitizer_analog_trace_v2_generated::{
     digitizer_analog_trace_message_buffer_has_identifier, root_as_digitizer_analog_trace_message,
 };
 use tdengine::{wrapper::TDEngine, TimeSeriesEngine};
-use tracing::{debug, info, warn};
+use tracing::{debug, info, level_filters::LevelFilter, trace_span, warn};
 
 #[derive(Parser)]
 #[clap(author, version, about)]
@@ -56,6 +57,10 @@ pub(crate) struct Cli {
     /// Number of expected channels in a message e.g. --num_channels 8
     #[clap(long)]
     num_channels: usize,
+
+    /// If set, then open-telemetry data is sent to the URL specified, otherwise the standard tracing subscriber is used
+    #[clap(long)]
+    otel_endpoint: Option<String>,
 }
 
 #[tokio::main]
@@ -64,7 +69,9 @@ async fn main() {
 
     let cli = Cli::parse();
 
-    debug!("Createing TDEngine instance");
+    let tracer = conditional_init_tracer!(cli.otel_endpoint.as_deref(), LevelFilter::TRACE);
+
+    debug!("Creating TDEngine instance");
     let mut tdengine: TDEngine = TDEngine::from_optional(
         cli.td_dsn,
         cli.td_username,
@@ -107,6 +114,12 @@ async fn main() {
     loop {
         match consumer.recv().await {
             Ok(message) => {
+                let span = trace_span!("Trace Source Message");
+                message
+                    .headers()
+                    .conditional_extract_to_span(tracer.is_some(), &span);
+                let _guard = span.enter();
+
                 match message.payload() {
                     Some(payload) => {
                         if digitizer_analog_trace_message_buffer_has_identifier(payload) {
